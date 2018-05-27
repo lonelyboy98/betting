@@ -6,13 +6,12 @@ class Match():
 
         self.homeBetData = {}
         self.awayBetData = {}
-        self.betData = {}
 
         url = 'https://zenitbet.com'
 
         payload = {
-            'login': '4144443',
-            'password': 'Puriaso136531113355121',
+            'login': LOGIN,
+            'password': PASSWORD,
         }
 
         self.s = requests.sessions.Session()
@@ -26,6 +25,7 @@ class Match():
 
         self.s.get('https://zenitbet.com/live/view')
 
+
         self.getNewRoss()
 
     def getNewRoss(self):
@@ -38,14 +38,24 @@ class Match():
             for i in range(2, len(trs), 2):
                 try:
                     ttt = trs[i].td.div.find_all('div')
+
                     for tt in ttt:
                         if '-й гол:' in str(tt):
                             ids = re.findall(r'(?<=b)\d+', str(tt))
+
+
                             if len(ids)<2:
                                 self.getNewRoss()
 
-                            self.setHomeBetData(ids[0])
-                            self.setAwayBetData(ids[1])
+                            a = self.setHomeBetData(ids[0])
+
+                            b = self.setAwayBetData(ids[1])
+
+                            if not a or not b:
+                                self.getNewRoss()
+
+
+                            
                             return
                 except Exception:
                     pass
@@ -59,8 +69,6 @@ class Match():
     def setZenitId(self, id):
         self.zenit_id = id
 
-    def getZName(self):
-        return self.zName
 
     def setHomeBetData(self, bid):
         r = self.s.post('https://zenitbet.com/ajax/live/bet/load', data={"bids[]":bid})
@@ -84,11 +92,12 @@ class Match():
             'odds['+str(gid)+'][cf]':cf,
             'odds['+str(gid)+'][d1]':d1,
             'odds['+str(gid)+'][d2]':d2,
-            'odds['+str(gid)+'][amount]': 5,
+            'odds['+str(gid)+'][amount]': AMOUNT,
             'odds_order[]':gid,
         }
 
         print(r.json()['result']['dict']['odd'][str(odd)])
+        return r.json()['result']['dict']['odd'][str(odd)]
 
     def setAwayBetData(self, bid):
         r = self.s.post('https://zenitbet.com/ajax/live/bet/load', data={"bids[]":bid})
@@ -112,50 +121,26 @@ class Match():
             'odds['+str(gid)+'][cf]':cf,
             'odds['+str(gid)+'][d1]':d1,
             'odds['+str(gid)+'][d2]':d2,
-            'odds['+str(gid)+'][amount]': 5,
+            'odds['+str(gid)+'][amount]': AMOUNT,
             'odds_order[]':gid,
         }
 
         print(r.json()['result']['dict']['odd'][str(odd)])
+        return r.json()['result']['dict']['odd'][str(odd)]
 
-    def setBetData(self, bid):
-        r = self.s.post('https://zenitbet.com/ajax/live/bet/load', data={"bids[]":bid})
-
-        gid = r.json()['result']['bets'][str(bid)]['gid']
-        odd = r.json()['result']['bets'][str(bid)]['odd']
-        d1 = r.json()['result']['bets'][str(bid)]['d1']
-        d2 = r.json()['result']['bets'][str(bid)]['d2']
-        cf = r.json()['result']['bets'][str(bid)]['cf']
-
-        self.betData = {
-            'live': 1,
-            'amount': 0,
-            'type': 1,
-            'system_type': "",
-            'agree_cf': 1,
-            'vip': 0,
-            'promo_id':0,
-            'odds['+str(gid)+'][gid]':gid,
-            'odds['+str(gid)+'][id]':bid,
-            'odds['+str(gid)+'][odd]':odd,
-            'odds['+str(gid)+'][cf]':cf,
-            'odds['+str(gid)+'][d1]':d1,
-            'odds['+str(gid)+'][d2]':d2,
-            'odds['+str(gid)+'][amount]': 5,
-            'odds_order[]':gid,
-        }
-
-        print(r.json()['result']['dict']['odd'][str(odd)])
-        
+            
     def _doBet(self, data):
         r = self.s.post('https://zenitbet.com/ajax/dobet', data=data)
         print(r.json())
 
         # refresh data here
+        self.homeBetData = {}
+        self.awayBetData = {}
+
+        print("Обновляю данные ставки для матча", str(self.getId()), str(self.getZenitId()))
+
         self.getNewRoss()
 
-        # print('pass')
-        # pass
 
     def doHomeBet(self):
         self._doBet(self.homeBetData)
@@ -163,8 +148,6 @@ class Match():
     def doAwayBet(self):
         self._doBet(self.awayBetData)
 
-    def doBet(self):
-        self._doBet(self.betData)
 
 
 class Autobetting():
@@ -175,20 +158,23 @@ class Autobetting():
         self.ws = websocket.WebSocket()
 
     def connectToWH(self):
+        print("Reconnect...")
         self.ws.connect("wss://whpush.williamhill.com/lsds/diffusion?ty=WB&v=9&ca=8&r=60000")
         self.ws.recv()
+        
         for i in self.matches:
-            self.ws.send("\x16scoreboards/v1/OB_EV" + str(i.getId()))
             self.ws.send("\x16scoreboards/v1/OB_EV" + str(i.getId()) + "/incidents")
-         
+        
+        print("Done!")
         return self.ws  
 
 
-    def addMatch(self, m):
+    def addMatch(self, m, new=False):
         self.matches.append(m)
-        self.ws.send("\x16scoreboards/v1/OB_EV" + str(m.getId()))
-        self.ws.send("\x16scoreboards/v1/OB_EV" + str(m.getId()) + "/incidents")
-        return True
+
+        if new:
+            self.ws.send("\x16scoreboards/v1/OB_EV" + str(m.getId()) + "/incidents")
+
 
     def getMatch(self, id):
         for i in self.matches:
@@ -214,31 +200,41 @@ class Autobetting():
         else:
             return False
 
+    def startScanning(self):
+        self.connectToWH()
+        while 1:
+            try:
+                res = self.ws.recv()
+                self.parse(res)
 
-def parseGoalByTeam(res):
-    res = res.decode("utf8", errors="ignore")
-    result = re.findall(r'G.?O.?A.?L[^_]', res)
-  
-    if len(result)>0 and len(res)<500 and len("".join(result))>=4:
-        print(res)
-        team = re.findall(r'(?<=teamType[^A-Z])[A-Z]+', res)
-        for item in team:
-            resTeam = re.findall(r'H.?O.?M.?E', item)
-            if resTeam:
-                return "HOME"
-            resTeam = re.findall(r'A.?W.?A.?Y', item)
-            if resTeam:
-                return "AWAY"
-    return None
+            except websocket._exceptions.WebSocketConnectionClosedException:
+                self.connectToWH()
 
-def parseGoal(res):
-    res = res.decode("utf8", errors="ignore")
-    result = re.findall(r'G.?O.?A.?L[^_]', res)
-  
-    if len(result)>0 and len(res)<500 and len("".join(result))>=4:
-        return True
-    return None
 
+    def parse(self, res):
+        res = str(res)
+        t = re.findall(r'(?<=OB_EV\d{8}dtype.)[A-Z_\d]+', res)
+
+        if len(t) == 0:
+            return
+
+        if 'STOP_GAME' in t:
+            ids = re.findall(r'(?<=OB_EV)\d+', res)
+            self.removeMatch(id=ids[0])
+            return
+
+        if t[0] == 'GOAL':
+
+            ids = re.findall(r'(?<=OB_EV)\d+', res)
+            team = re.findall(r'(?<=teamTyped)[A-Z]+', res)
+
+            m = self.getMatch(ids[0])
+
+            if team[0] == 'HOME':
+                m.doHomeBet()
+            if team[0] == 'AWAY':
+                m.doAwayBet()
+        
 
 if __name__ == '__main__':
     import websocket
@@ -246,6 +242,12 @@ if __name__ == '__main__':
     import requests
     import time
     from bs4 import BeautifulSoup as bs
+
+    AMOUNT = "5"
+    LOGIN = "4144443"
+    PASSWORD = "Puriaso136531113355121"
+
+
 
     with open('input.txt', 'r') as f:
         string = f.read()
@@ -257,28 +259,15 @@ if __name__ == '__main__':
 
     sss = []
 
+
+    ab = Autobetting()
+
     for i in arr:
         match = Match(i[0], i[1])
-        ab = Autobetting()
-        ws = ab.connectToWH()
         ab.addMatch(match)
 
-        sss.append([ws, match, ab])  
    
 
     print("Начинаю работу!\n")
+    ab.startScanning()
 
-
-    while True:
-        for i in range(len(sss)):
-            try:
-                res = sss[i][0].recv()
-                win = parseGoalByTeam(res)
-                if win == "HOME":
-                    sss[i][1].doHomeBet()
-                if win == "AWAY":
-                    sss[i][1].doAwayBet()
-
-
-            except websocket._exceptions.WebSocketConnectionClosedException:
-                sss[i][0] = sss[i][2].connectToWH()
